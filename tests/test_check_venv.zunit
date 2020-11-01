@@ -104,6 +104,21 @@
     assert "$lines[4]" same_as "Run the following command to fix this: \e[35m\"chmod 600 $TARGET/.venv\"\e[0m"
 }
 
+@test 'check_venv - No security warning for weak writeable by group permissions when suppressed' {
+    PWD="$TARGET"
+
+    echo "foobar" > "$TARGET/.venv"
+    chmod 600 "$TARGET/.venv"
+    chmod g+w "$TARGET/.venv"
+    AUTOSWITCH_IGNORE_PERMISSIONS_SECURITY=1
+    AUTOSWITCH_DEFAULTENV="foodefault"
+
+    run check_venv
+
+    assert $status equals 0
+    assert "$output" same_as "Switching virtualenv: \e[1m\e[35mfoobar\e[0m \e[32m[🐍$PYTHON_VERSION]\e[0m"
+}
+
 @test 'check_venv - Security warning for weak writeable by everyone permissions' {
     PWD="$TARGET"
 

@@ -160,36 +160,49 @@ function _activate_pipenv() {
     return 1
 }
 
+function _check_security() {
+
+    local venv_path="$1"
+
+    local file_owner
+    local file_permissions
+
+    /usr/bin/stat --version &> /dev/null
+    if [[ $? -eq 0 ]]; then   # Linux, or GNU stat
+        file_owner="$(/usr/bin/stat -c %u "$venv_path")"
+        file_permissions="$(/usr/bin/stat -c %a "$venv_path")"
+    else                      # macOS, or FreeBSD stat
+        file_owner="$(/usr/bin/stat -f %u "$venv_path")"
+        file_permissions="$(/usr/bin/stat -f %OLp "$venv_path")"
+    fi
+
+    if [[ -z "$AUTOSWITCH_IGNORE_OWNER_SECURITY" ]] && [[ "$file_owner" != "$(id -u)" ]]; then
+        printf "AUTOSWITCH WARNING: Virtualenv will not be activated\n\n"
+        printf "Reason: Found a $AUTOSWITCH_FILE file but it is not owned by the current user\n"
+        printf "Change ownership of ${PURPLE}$venv_path${NORMAL} to ${PURPLE}'$USER'${NORMAL} to fix this\n"
+        return 1
+    elif [[ -z "$AUTOSWITCH_IGNORE_PERMISSIONS_SECURITY" ]] && [[ ! "$file_permissions" =~ ^[64][04][04]$ ]]; then
+        printf "AUTOSWITCH WARNING: Virtualenv will not be activated\n\n"
+        printf "Reason: Found a $AUTOSWITCH_FILE file with weak permission settings ($file_permissions).\n"
+        printf "Run the following command to fix this: ${PURPLE}\"chmod 600 $venv_path\"${NORMAL}\n"
+        return 1
+    fi
+    return 0
+}
+
 
 # Automatically switch virtualenv when $AUTOSWITCH_FILE file detected
 function check_venv()
 {
-    local file_owner
-    local file_permissions
 
     # Get the $AUTOSWITCH_FILE, scanning parent directories
     local venv_path="$(_check_path "$PWD")"
 
     if [[ -n "$venv_path" ]]; then
 
-        /usr/bin/stat --version &> /dev/null
-        if [[ $? -eq 0 ]]; then   # Linux, or GNU stat
-            file_owner="$(/usr/bin/stat -c %u "$venv_path")"
-            file_permissions="$(/usr/bin/stat -c %a "$venv_path")"
-        else                      # macOS, or FreeBSD stat
-            file_owner="$(/usr/bin/stat -f %u "$venv_path")"
-            file_permissions="$(/usr/bin/stat -f %OLp "$venv_path")"
-        fi
+        local passed_security_check="$(_check_security "$venv_path")"
 
-        if [[ "$file_owner" != "$(id -u)" ]]; then
-            printf "AUTOSWITCH WARNING: Virtualenv will not be activated\n\n"
-            printf "Reason: Found a $AUTOSWITCH_FILE file but it is not owned by the current user\n"
-            printf "Change ownership of ${PURPLE}$venv_path${NORMAL} to ${PURPLE}'$USER'${NORMAL} to fix this\n"
-        elif ! [[ "$file_permissions" =~ ^[64][04][04]$ ]]; then
-            printf "AUTOSWITCH WARNING: Virtualenv will not be activated\n\n"
-            printf "Reason: Found a $AUTOSWITCH_FILE file with weak permission settings ($file_permissions).\n"
-            printf "Run the following command to fix this: ${PURPLE}\"chmod 600 $venv_path\"${NORMAL}\n"
-        else
+        if [[ $passed_security_check ]]; then
             if [[ "$venv_path" == *"/Pipfile" ]] && type "pipenv" > /dev/null; then
                 if _activate_pipenv; then
                     return
